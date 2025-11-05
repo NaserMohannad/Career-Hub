@@ -1,58 +1,59 @@
-Career Hub – AI Job & Internship Recommender (CrewAI + HF Spaces + n8n)
+# Career Hub – AI Job & Internship Recommender (CrewAI + HF Spaces + n8n)
 
-This repository documents a production-ready multi-agent pipeline I built with CrewAI to source, scrape, and rank student and entry-level opportunities, then deliver them to learners via n8n and email. I designed and coded all tools, prompts, and server endpoints, and deployed the stack with a Dockerfile on Hugging Face Spaces.
+This repository documents a production-ready multi-agent pipeline built with CrewAI to source, scrape, and rank student and entry-level opportunities, then deliver them to learners via n8n and email.  
+I personally designed and implemented all tools, prompts, and API endpoints, and deployed the full stack using Docker on Hugging Face Spaces.
 
-Highlights
+---
 
-Single owner: I built the agent system end-to-end (CrewAI agents, tools, prompts, API, deployment).
+## Highlights
 
-Multi-agent pipeline: query generation → search → URL filtering → page scraping → ranking → export.
+- **Single Owner** – Full system design and implementation (CrewAI agents, tools, prompts, API, Docker, deployment).  
+- **Multi-Agent Pipeline** – Query generation → Search → URL filtering → Page scraping → Ranking → Export.  
+- **Student-First Focus** – Optimized strictly for internships, junior, trainee, and entry-level roles.  
+- **HTTP Ingestion** – Receives student data via POST requests from an n8n workflow.  
+- **Handoff to n8n** – Sends ranked results through a webhook for automated email delivery.  
 
-Student-first: prompts and filters are engineered to focus strictly on internships, junior, trainee, and entry-level roles.
+---
 
-HTTP ingestion: the server accepts student profiles from a teammate (n8n) via POST JSON.
+## System Overview
 
-Handoff to n8n: ranked results are posted to an n8n webhook for downstream email delivery.
+Client (Form / n8n) → /webhook (FastAPI on HF Space)
+│
+├─ saves payload → ./incoming/payload_*.json
+└─ schedules run_pipeline()
+│
+├─ Agent 1: Generate Queries (CrewAI + LLM)
+├─ Agent 2: Search (Tavily API)
+├─ Agent 3: Scrape (ScrapeGraph)
+└─ Rank: filter + score early-career fit
+│
+writes artifacts → ./daily-job-recommendations
+│
+└─ POST → RESULTS_WEBHOOK_URL (n8n) for emailing
 
-System Overview
-Client (Form / n8n)  →  /webhook (FastAPI on HF Space)
-                             │
-                             ├─ saves payload → ./incoming/payload_*.json
-                             └─ schedules run_pipeline()
-                                     │
-                                     ├─ Agent 1: Generate Queries (CrewAI + LLM)
-                                     ├─ Agent 2: Search (Tavily API)
-                                     ├─ Agent 3: Scrape (ScrapeGraph)
-                                     └─ Rank: filter + score early-career fit
-                                     │
-                                writes artifacts → ./daily-job-recommendations
-                                     │
-                                     └─ POST → RESULTS_WEBHOOK_URL (n8n) for emailing
+---
 
-Features
+## Features
 
-Precise targeting: interests × locations (+ optional skills) → early-career seniorities only.
+- Precise targeting: combines interests, skills, and preferred locations to find early-career roles only.  
+- Strict domain filtering: LinkedIn, Bayt, Akhtaboot, Indeed, Glassdoor.  
+- Accurate scraping: extracts exact on-page data using ScrapeGraph.  
+- Intelligent ranking: scores jobs by skill match, interest, seniority, location, freshness, and language.  
+- Stateless API: POST `/webhook` to trigger a run, GET `/health` for service status.  
 
-Strict domain filtering: LinkedIn, Bayt, Akhtaboot, Indeed, Glassdoor.
+---
 
-On-page extraction: no hallucinations; scraper returns exact fields only.
+## API Endpoints
 
-Ranking: blends skills match, interest match, seniority, location, freshness, and language.
+### POST /webhook
 
-Stateless API: POST /webhook to enqueue a run; GET /health for status.
+Receives a student profile, saves it to `./incoming/`, and schedules the pipeline.
 
-API
-POST /webhook
-
-Accepts a student profile, saves it to ./incoming/, and schedules the pipeline.
-
-Headers
-
+**Headers**
 Content-Type: application/json
 
-
-Body (example)
-
+**Body Example**
+```json
 {
   "id": "s-001",
   "name": "Student Name",
@@ -61,58 +62,68 @@ Body (example)
   "job_skills": "python, sql",
   "locations": ["Amman", "Remote"]
 }
-
-
 Response
-
 {
   "ok": true,
   "message": "Payload received. Pipeline scheduled.",
   "saved": "./incoming/payload_20250101-120000.json",
   "output_dir": "./daily-job-recommendations"
 }
-
 POST /run?sync=true|false
 
-Trigger the pipeline manually (blocking or in background).
+Runs the pipeline manually (synchronously or in the background).
 
 GET /health
 
-Basic readiness info + any pipeline import errors.
+Returns readiness information and pipeline import status.
 
-Agents & Tools
+Agents and Tools
 
-I authored all tools in Python and wired them to CrewAI agents with strict, prompt-engineered instructions.
+All tools were coded manually in Python and integrated into CrewAI agents using prompt-engineered instructions.
 
 Agent 1 — Job Search Query Generator
 
-Goal: Build queries from interests × seniority × locations (+ light skills).
+Goal: Build job search queries from interests, seniority, and locations.
 
-Output: up to 12 unique queries.
+Output: Up to 12 diverse queries.
 
-Why: keeps the search space aligned to student/entry-level roles.
+Purpose: Keep the search focused on student/entry-level opportunities.
 
 Agent 2 — Tavily Job Search Specialist
 
-Goal: Use Tavily to fetch real job posting URLs.
+Goal: Retrieve real job posting URLs from Tavily.
 
-Filters: allowed domains + path heuristics (/job/, /jobs/view/, etc.).
+Filters: Allowed domains and path heuristics (e.g., /job/, /jobs/view/).
 
-Output: deduplicated, scored URLs.
+Output: Deduplicated and scored job URLs.
 
 Agent 3 — Job Data Scraper
 
-Goal: Extract on-page details only (title, company, location, description, requirements, salary, benefits, posted date, language, seniority, apply URL).
+Goal: Extract verified job details (title, company, location, salary, etc.).
 
-Engine: scrapegraph_py SmartScraper with a strict JSON schema prompt.
+Engine: scrapegraph_py SmartScraper using a structured JSON schema.
 
 Ranking
 
-Weights: skills match, interest match, early-career seniority, location fit (GCC/Jordan or Remote), freshness, language, small source boost.
+Jobs are ranked using weighted factors:
 
-Produces a top_jobs list with reasons and metadata.
+Skill match
 
-Data Model (selected)
+Interest match
+
+Seniority (intern/junior/entry)
+
+Location fit (Jordan, GCC, or Remote)
+
+Posting freshness
+
+Language
+
+Domain priority (LinkedIn, Bayt, etc.)
+
+Results include a top_jobs list with reasons and metadata.
+
+Data Model Example
 {
   "jobs": [
     {
@@ -121,9 +132,8 @@ Data Model (selected)
       "company": "...",
       "location": "...",
       "is_remote": true,
-      "seniority": "internship|junior|entry-level|...",
+      "seniority": "internship|junior|entry-level",
       "posted_at": "YYYY-MM-DD",
-      "job_type": "Full-time|Internship|...",
       "salary": "...",
       "description": "...",
       "requirements": ["...", "..."],
@@ -131,123 +141,51 @@ Data Model (selected)
       "apply_url": "...",
       "source_domain": "linkedin.com",
       "language": "English|Arabic",
-      "scrape_status": "success|failed|error"
+      "scrape_status": "success"
     }
   ]
 }
-
-Environment Variables
-
-Set these in HF Spaces (Repository/Space secrets) or locally:
-
-OPENROUTER_API_KEY – OpenRouter API key
-
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-
-TAVILY_API_KEY – Tavily search key
-
-SCRAPEGRAPH_API_KEY (or scrap_key) – ScrapeGraph key
-
-AGENTOPS_API_KEY (optional) – AgentOps session logging
-
-RESULTS_WEBHOOK_URL – n8n endpoint to receive ranked results
-
-Tip: Some LLM stacks also check OPENAI_API_KEY/OPENAI_API_BASE. You can mirror:
-
-OPENAI_API_KEY=$OPENROUTER_API_KEY
-OPENAI_API_BASE=https://openrouter.ai/api/v1
-
 Deployment
 Docker
 
-The project ships with a Dockerfile to build a reproducible image.
-
-Expose the FastAPI app (app.py) and mount or bake your environment variables.
+The repository includes a Dockerfile for containerized deployment.
+Expose the FastAPI app and set environment variables via Docker --env or .env.
 
 Hugging Face Spaces
 
-Space type: Docker or FastAPI.
+Space type: Docker or FastAPI
 
-Add secrets in Settings → Repository secrets.
+Add secrets under Settings → Repository secrets
 
-The app persists artifacts under:
+Output paths:
 
-./incoming/ for raw payloads
+./incoming/ for received payloads
 
-./daily-job-recommendations/ for outputs
+./daily-job-recommendations/ for pipeline outputs
 
 n8n Integration
 
-Teammate sends student profiles to POST https://<space>/webhook with JSON body.
+Incoming: n8n sends POST requests to https://<space>/webhook with student JSON.
 
-After the run finishes, the server POSTs the ranked results to RESULTS_WEBHOOK_URL (n8n), which handles email delivery to the student.
+Outgoing: The FastAPI app POSTs ranked results to RESULTS_WEBHOOK_URL, where n8n emails the student.
 
-n8n HTTP Request node (sending to our server)
+n8n HTTP Request Node (sending to server)
 
 Method: POST
 
 URL: https://<space-domain>/webhook
 
-Send: JSON body (see example above)
+Headers: Content-Type: application/json
 
-Content-Type: application/json
+Body: JSON (student profile)
 
-n8n Webhook (receiving from our server)
+n8n Webhook Node (receiving results)
 
 Method: POST
 
-Expects the ranked JSON; proceed with templated email.
-
-Operations & Monitoring
-
-Logs: Hugging Face Space logs show /webhook requests, payload saves, and pipeline progress.
-
-Error transparency: endpoints return structured JSON with validation errors.
-
-AgentOps (optional): session traces for agent decisions, tools, and timings.
-
-Security Notes
-
-Validate Content-Type: application/json and reject malformed bodies.
-
-Keep secrets in Space/Repo secrets, not in the repo.
-
-Limit allowed outbound domains in the scraper to reduce risk.
-
-Consider an HMAC or token header if you need to restrict /webhook.
-
-Local Testing
-curl -i -X POST https://<your-space>.hf.space/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id":"test-01",
-    "name":"Test Student",
-    "email":"student@example.com",
-    "interests":"data engineering, analytics",
-    "job_skills":"python, sql",
-    "locations":["Amman","Remote"]
-  }'
-
-Why this approach
-
-Deterministic curation: tight prompts and filters prevent noise.
-
-Composable: agents are decoupled via CrewAI tasks and well-scoped tools.
-
-Portable: Docker + FastAPI + Spaces make it easy to deploy and integrate.
-
-Roadmap
-
-Per-student dashboards and saved searches.
-
-Application tracker with reminders.
-
-Multi-language scoring and email localization.
-
-Additional sources with structured APIs.
+Expects ranked JSON to trigger email delivery.
 
 Ownership
 
-Owner: I designed and implemented the CrewAI agents, tools, prompts, API server, Docker/HF Spaces deployment, and the n8n integration contract.
-
-Teammate: Handles final email delivery via n8n using the webhook payload I send.
+Owner: Designed and implemented all CrewAI agents, tools, prompts, API server, Docker/HF Spaces deployment, and n8n integration.
+Teammate: Handles downstream email delivery via n8n using the webhook payload.
